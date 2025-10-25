@@ -58,8 +58,7 @@ pipeline {
                             docker stop data-drive 2>/dev/null || true
                             docker rm data-drive 2>/dev/null || true
                             echo '🚀 Starting new container...'
-                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped  --env-file /root/Data-Drive/.env '$DOCKER_USER/${IMAGE_NAME}:latest'
-
+                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped  --env-file /home/ubuntu/data-drive.env '$DOCKER_USER/${IMAGE_NAME}:latest'
                             echo '🔍 Checking container status...'
                             docker ps | grep data-drive || echo '⚠️ Container not found!'
 
