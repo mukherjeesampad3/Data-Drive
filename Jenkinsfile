@@ -3,14 +3,14 @@ pipeline {
 
     environment {
         IMAGE_NAME = "data-drive-container"
-        EC2_HOST = "13.234.113.90"
+        EC2_HOST = "13.201.16.199"
     }
 
     stages {
         stage('Checkout') {
             steps {
                 echo "📦 Cloning repository..."
-                git branch: 'main', url: 'https://github.com/sujatrodas96/Data-Drive.git'
+                git branch: 'main', url: 'https://github.com/mukherjeesampad3/Data-Drive.git'
             }
         }
 
