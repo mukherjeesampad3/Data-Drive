@@ -1,11 +1,6 @@
 pipeline {
     agent any
 
-    parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch to build')
-        string(name: 'APP_PORT', defaultValue: '3000', description: 'Port to expose the container')
-    }
-
     environment {
         IMAGE_NAME = "data-drive-container"
         EC2_HOST = "13.234.113.90"
@@ -14,16 +9,18 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "📦 Cloning repository from branch '${params.BRANCH_NAME}'..."
-                git branch: "${params.BRANCH_NAME}", url: 'https://github.com/mukherjeesampad3/Data-Drive.git'
+                echo "📦 Cloning repository..."
+                git branch: 'main', url: 'https://github.com/mukherjeesampad3/Data-Drive.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "🐳 Building Docker image '${IMAGE_NAME}:latest'..."
+                echo "🐳 Building Docker image..."
                 sh '''
                     set -e
+                    echo "🧩 Checking Docker access..."
+                    docker info > /dev/null
                     docker build -t ${IMAGE_NAME}:latest .
                 '''
             }
@@ -37,8 +34,10 @@ pipeline {
                         echo "🔑 Logging in to Docker Hub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        echo "📤 Tagging and pushing image..."
+                        echo "📦 Tagging image..."
                         docker tag ${IMAGE_NAME}:latest "$DOCKER_USER/${IMAGE_NAME}:latest"
+
+                        echo "🚀 Pushing image to Docker Hub..."
                         docker push "$DOCKER_USER/${IMAGE_NAME}:latest"
 
                         docker logout
@@ -49,7 +48,7 @@ pipeline {
 
         stage('Deploy to EC2') {
             steps {
-                echo "🚀 Deploying to EC2 instance ${EC2_HOST}..."
+                echo "🚀 Deploying to EC2..."
                 withCredentials([
                     sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
                     usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')
@@ -58,23 +57,28 @@ pipeline {
                         set -e
                         chmod 600 "$SSH_KEY"
 
-                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@${EC2_HOST}" << EOF
+                        echo "🔗 Connecting to EC2 host: ${EC2_HOST} ..."
+                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER"@"${EC2_HOST}" bash -s <<'EOF'
                             set -e
                             echo "🔑 Logging in to Docker Hub..."
-                            echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
                             echo "📥 Pulling latest image..."
-                            docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            docker pull "$DOCKER_USER/${IMAGE_NAME}:latest"
 
                             echo "🧹 Removing old container if exists..."
-                            docker stop data-drive || true
-                            docker rm data-drive || true
+                            docker rm -f data-drive 2>/dev/null || true
 
                             echo "🚀 Starting new container..."
-                            docker run -d -p ${APP_PORT}:${APP_PORT} --name data-drive --restart unless-stopped '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            docker run -d \
+                                --name data-drive \
+                                --env-file /root/Data-Drive/.env \
+                                -p 3000:3000 \
+                                --restart unless-stopped \
+                                "$DOCKER_USER/${IMAGE_NAME}:latest"
 
-                            echo "🔍 Verifying container status..."
-                            docker ps | grep data-drive || echo '⚠️ Container not running!'
+                            echo "🔍 Checking container status..."
+                            docker ps | grep data-drive || (echo '⚠️ Container not found!' && exit 1)
 
                             docker logout
                         EOF
@@ -87,7 +91,7 @@ pipeline {
     post {
         success {
             echo "✅ Deployment successful!"
-            echo "🌐 Application should be running at http://${EC2_HOST}:${params.APP_PORT}"
+            echo "🌐 Application should be running at http://${EC2_HOST}:3000"
         }
         failure {
             echo "❌ Deployment failed!"
@@ -95,8 +99,7 @@ pipeline {
         always {
             echo "🧹 Cleaning up local Docker resources..."
             sh '''
-                docker logout || true
-                docker image prune -f || true
+                docker logout 2>/dev/null || true
             '''
         }
     }
