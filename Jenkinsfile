@@ -55,7 +55,8 @@ pipeline {
                             docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
 
                             echo '🧹 Cleaning up old container...'
-                            docker rm -f data-drive 2>/dev/null || true
+                            docker stop data-drive 2>/dev/null || true
+                            docker rm data-drive 2>/dev/null || true
                             echo '🚀 Starting new container...'
                             docker run -d -p 3000:3000 --name data-drive --restart unless-stopped '$DOCKER_USER/${IMAGE_NAME}:latest'
 
