@@ -18,9 +18,6 @@ pipeline {
             steps {
                 echo "🐳 Building Docker image..."
                 sh '''
-                    set -e
-                    echo "🧩 Checking Docker access..."
-                    docker info > /dev/null
                     docker build -t ${IMAGE_NAME}:latest .
                 '''
             }
@@ -30,16 +27,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
-                        set -e
                         echo "🔑 Logging in to Docker Hub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-                        echo "📦 Tagging image..."
                         docker tag ${IMAGE_NAME}:latest "$DOCKER_USER/${IMAGE_NAME}:latest"
-
-                        echo "🚀 Pushing image to Docker Hub..."
                         docker push "$DOCKER_USER/${IMAGE_NAME}:latest"
-
                         docker logout
                     '''
                 }
@@ -53,36 +44,28 @@ pipeline {
                     sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
                     usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')
                 ]) {
-                     sh '''
-                set -e
-                chmod 600 "$SSH_KEY"
+                    sh '''
+                        chmod 600 "$SSH_KEY"
 
-                echo "🔗 Connecting to EC2 host: ${EC2_HOST} ..."
-                ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER"@"${EC2_HOST}" "
-                    set -e
-                    echo '🔑 Logging in to Docker Hub...'
-                    echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
+                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER"@"${EC2_HOST}" "
+                            echo '🔑 Logging in to Docker Hub...'
+                            echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
 
-                    echo '📥 Pulling latest image...'
-                    docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            echo '📥 Pulling latest image...'
+                            docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
 
-                    echo '🧹 Removing old container if exists...'
-                    docker rm -f data-drive 2>/dev/null || true
+                            echo '🧹 Cleaning up old container...'
+                            docker stop data-drive 2>/dev/null || true
+                            docker rm data-drive 2>/dev/null || true
+                            echo '🚀 Starting new container...'
+                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped '$DOCKER_USER/${IMAGE_NAME}:latest'
 
-                    echo '🚀 Starting new container...'
-                    docker run -d \
-                        --name data-drive \
-                        --env-file /root/Data-Drive/.env \
-                        -p 3000:3000 \
-                        --restart unless-stopped \
-                        '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            echo '🔍 Checking container status...'
+                            docker ps | grep data-drive || echo '⚠️ Container not found!'
 
-                    echo '🔍 Checking container status...'
-                    docker ps | grep data-drive || (echo '⚠️ Container not found!' && exit 1)
-
-                    docker logout
-                "
-            '''
+                            docker logout
+                        "
+                    '''
                 }
             }
         }
