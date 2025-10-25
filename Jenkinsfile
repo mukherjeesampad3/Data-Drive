@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "data-drive-container"
-        EC2_HOST = "3.91.38.160"
+        EC2_HOST = "13.234.113.90"
     }
 
     stages {
